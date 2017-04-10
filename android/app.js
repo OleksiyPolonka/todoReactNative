@@ -1,5 +1,14 @@
 import React, { Component } from 'react';
-import { View, Text, StyleSheet, Platform, ListView, Keyboard } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  ListView,
+  Keyboard,
+  AsyncStorage,
+  ActivityIndicator
+} from 'react-native';
 
 import Header from './header';
 import Footer from './footer';
@@ -10,29 +19,33 @@ class App extends Component {
     super(...args);
     const ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
     this.state = {
+      loading: true,
       allComplete: false,
       value: '',
       items: [],
-      dataSource: ds.cloneWithRows([])
+      dataSource: ds.cloneWithRows([]),
+      filter: 'all'
     }
-    this.setSorce = this.setSorce.bind(this);
+    this.setSource = this.setSource.bind(this);
     this.onRemove = this.onRemove.bind(this);
     this.onComplete = this.onComplete.bind(this);
+    this.filterItems = this.filterItems.bind(this);
+    this.clearCompleted = this.clearCompleted.bind(this)
     this.handleAddItem = this.handleAddItem.bind(this);
     this.onToggleAllComplete = this.onToggleAllComplete.bind(this);
   }
-  setSorce(items, itemsDatasource, otherState) {
+  setSource(items, itemsDatasource, otherState = {}) {
     this.setState({
       items,
       dataSource: this.state.dataSource.cloneWithRows(itemsDatasource),
       ...otherState
     });
+    AsyncStorage.setItem('items', JSON.stringify(items));
   }
   onRemove(key) {
-    console.log('key: ', key);
     const newItems = this.state.items.filter(el => el.key !== key)
 
-    this.setSorce(newItems, newItems);
+    this.setSource(newItems, newItems, { filter: 'all' });
   }
   onComplete(key, complete) {
     const newItems = this.state.items.map(el => {
@@ -43,7 +56,15 @@ class App extends Component {
       };
     });
 
-    this.setSorce(newItems, newItems);
+    this.setSource(newItems, newItems);
+  }
+  componentWillMount() {
+    AsyncStorage.getItem('items')
+      .then((response = {}) => {
+        const items = JSON.parse(response);
+
+        this.setSource(items, items, { loading: false })
+      })
   }
   handleAddItem() {
     const { value, items } = this.state;
@@ -55,7 +76,7 @@ class App extends Component {
         complete: false
       }, ...items];
 
-      this.setSorce(newItems, newItems, { value: '' });
+      this.setSource(newItems, newItems, { value: '', filter: 'all' });
     } 
   }
   onToggleAllComplete() {
@@ -63,10 +84,34 @@ class App extends Component {
     const complete = !allComplete;
     const newItems = items.map(el => Object.assign({}, el, { complete }));
 
-    this.setSorce(newItems, newItems, { allComplete: complete });
+    this.setSource(newItems, newItems, { allComplete: complete });
+  }
+  filterItems(filter = 'all', count) {
+    const { items } = this.state;
+    const newItems = items.filter(el => {
+      if (filter === 'active') {
+        return !el.complete;
+      }
+      if (filter === 'completed') {
+        return el.complete
+      }
+
+      return el;
+    })
+
+    if (count) {
+      return newItems;
+    }
+
+    this.setSource(items, newItems, { filter });
+  }
+  clearCompleted() {
+    const newItems = this.state.items.filter(el => !el.complete)
+
+    this.setSource(newItems, newItems, {filter: 'all'});
   }
   render() {
-    const { value, dataSource, items } = this.state;
+    const { value, dataSource, items, filter, loading } = this.state;
 
     return (
       <View style={styles.container}>
@@ -98,7 +143,20 @@ class App extends Component {
             )}
           />
         </View>
-        <Footer />
+        <Footer
+          clearCompleted={this.clearCompleted}
+          count={this.filterItems(filter, true).length}
+          filter={filter}
+          filterItems={this.filterItems}
+        />
+        { loading &&
+          <View style={styles.loading}>
+            <ActivityIndicator
+              animating
+              size='large'
+            />
+          </View>
+        }
       </View>
     )
   }
@@ -123,6 +181,16 @@ const styles = StyleSheet.create({
   separator: {
       borderWidth: 1,
       borderColor: '#f5f5f5'
+  },
+  loading: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, .2)'
   }
 })
 
